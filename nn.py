@@ -1,33 +1,25 @@
-﻿from collections import defaultdict
-import matplotlib.image as mpimg
-import matplotlib.pyplot as pl
-import matplotlib as plt
-import numpy as np
+﻿import numpy as np
 import random
-import copy
 import sys
 import re
-import os
 
-from functions import Cost, Activation
+from functions import Cost, Activation, Regularization
 
 
-""" +Ранняя остановка на основании ошибки на валидационном множестве
-    +Регуляризация, ?момент, ?локальная скорость нейронов
-"""
-
-mycost = Cost()
-myactiv = Activation(type='hyperbolic')
-
-class neural_network(object):
+class NeuralNetwork(object):
     """ """
+
     def __init__(self,
                  vn_layers,
-                 v_neurons, # [0] + [Activation()] * (len(vn_layers) - 1)
+                 v_neurons, # 
                  cost=Cost(),
                  learning_rate=0.1,
                  momentum_rate=0.9,
-                 regularization_rate=0.1
+                 # локальная скорость нейронов
+                 local_nuruons_rate=0.,
+                 # Регуляризация
+                 regularization_rate=0.0001,
+                 regularization_norm=Regularization()
                 ):
         """ 
             ----------------------------------------------------
@@ -38,7 +30,7 @@ class neural_network(object):
             layers-list [5, 10, 10, 5]:
             5 input, 2 hidden layers (10 neurons each), 5 output
             ----------------------------------------------------
-            v_neurons = [0, Activation(), Activation(), ...]
+            v_neurons = [ Activation() ] * (len(vn_layers) - 1)
             ----------------------------------------------------
         """
         self.layers = vn_layers
@@ -54,7 +46,7 @@ class neural_network(object):
             self.weights.append(W)
 
         self.cost = cost
-        self.neurons = v_neurons
+        self.neurons = [0] + v_neurons
         self.Z = None
         self.A = None
 

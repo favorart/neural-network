@@ -70,8 +70,8 @@ class Activation(object):
     def __init__(self, type='sigmoid'):
         """ """
         if   type == 'identity':
-            self.F = Activation.identity_function
-            self.D = Activation.identity_derivative
+            self.F = np.identity
+            self.D = np.ones_like
         elif type == 'sigmoid':
             self.F = Activation.sigmoid_function
             self.D = Activation.sigmoid_derivative
@@ -94,14 +94,6 @@ class Activation(object):
     def support_functions():
         return [ 'identity', 'sigmoid', 'hyperbolic',
                  'softmax',  'ReLU',    'rectifier' ]
-
-    @staticmethod
-    def identity_function(x):
-        return x
-
-    @staticmethod
-    def identity_derivative(x):
-        return np.ones_like(x)
 
     @staticmethod
     def sigmoid_function(x, a=1.):
@@ -153,17 +145,38 @@ class Activation(object):
         return  Activation.sigmoid_function(x)
 
 
-class Regularization:
+class Regularization(object):
+    """ """
+    def __init__(self, type='sigmoid'):
+        """ """
+        if   type == 'L0':
+            self.F = np.identity
+            self.D = np.ones_like
+        elif type == 'L1':
+            self.F = Regularization.L1_F
+            self.D = Regularization.L1_D
+        elif type == 'L2':
+            self.F = Regularization.L2_F
+            self.D = Regularization.L2_D
+        else:
+            raise Exception('Supported functions: L0, L1, L2')
 
-    def l1(m):
-        return np.sum(np.abs(m.reshape((1, np.prod(m.shape)))))
-
-    def d_l1(m):
+    def list(self):
+        " Supported functions' names "
+        return [ 'L0', 'L1', 'L2' ]
+    
+    @staticmethod
+    def L1_F(x):
         return (m > 0) * 2 - 1.0  # sign(m) = m / abs(m)
 
-    def l2(m):
+    @staticmethod
+    def L1_D(x):
+        return np.sum( np.abs( x.reshape((1, np.prod(m.shape)))))
+
+    @staticmethod
+    def L2_F(x):
         return 0.5 * np.sum(m.reshape((1, np.prod(m.shape))) ** 2)
 
-    def d_l2(m):
-        return m
+    @staticmethod
+    def L2_D(x): return x
 

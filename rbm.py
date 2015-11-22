@@ -17,15 +17,15 @@ import sys
         попрошу вас добавить в модель какую нибудь фичу
         типа регуляризации, момента, или отрисовать выученные признаки.
 """
-class RBM(object):
+class BoltzmannMachine(object):
     """ Restricted Boltzmann Machine """ 
     def __init__(self,
-                 n_visible=2,
-                 n_hidden=3,
-                 rnd=np.random.RandomState(1234) # random state
+                 n_visible,
+                 n_hidden,
+                 rnd=np.random.RandomState(1234)
                 ):
         """ Constructor """
-        self.rnd = rnd
+        self.rnd = rnd # random state
         
         self.n_visible = n_visible # num of units in visible (input) layer
         self.n_hidden  = n_hidden  # num of units in hidden layer
