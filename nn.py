@@ -1,5 +1,6 @@
 ﻿import numpy as np
 import random
+import copy
 import sys
 import re
 
@@ -8,18 +9,18 @@ from functions import Cost, Activation, Regularization
 
 class NeuralNetwork(object):
     """ """
-
     def __init__(self,
                  vn_layers,
-                 v_neurons, # 
+                 v_neurons,
                  cost=Cost(),
                  learning_rate=0.1,
                  momentum_rate=0.9,
                  # локальная скорость нейронов
                  local_nuruons_rate=0.,
                  # Регуляризация
-                 regularization_rate=0.0001,
-                 regularization_norm=Regularization()
+                 regularization_rate=0.,
+                 regularization=Regularization(),
+                 rnd=(lambda size, margin=0.1: np.random.normal(0, margin, size))
                 ):
         """ 
             ----------------------------------------------------
@@ -42,11 +43,14 @@ class NeuralNetwork(object):
         self.weights = [0]
         for i in xrange(1, len(self.layers)): # skip zero layer
             # create nxM+1 matrix (+bias!) with random floats in range [-1; 1]
-            W = np.array( np.random.normal(0, 0.1, size=(vn_layers[i], vn_layers[i-1] + 1)) )
+            size=(vn_layers[i], vn_layers[i-1] + 1)
+            W = np.array( rnd(size) )
             self.weights.append(W)
 
         self.cost = cost
         self.neurons = [0] + v_neurons
+        self.regular = regularization
+
         self.Z = None
         self.A = None
 
@@ -76,9 +80,6 @@ class NeuralNetwork(object):
             # in previous layers by the appropriate weights and sum the productions
             self.A.append( np.array(self.neurons[i].F(self.Z[i])) )
             # apply activation function for each value
-
-        # with open('out2.txt', 'w') as f: #  >>f,
-        # print self.Z, '\n\n', self.A
         return self.A[-1]
 
     def predict(self, input):
@@ -92,142 +93,99 @@ class NeuralNetwork(object):
             self.A[i-1]  = np.vstack(([1.], self.A[i-1])) # +bias
             self.Z.append( np.dot(self.A[i-1], self.weights[i].T) )
             self.A.append( np.array(self.neurons[i].F(self.Z[i])) )
+
         return self.A[-1]
 
-    def accuracy(self, X, Y):
-        """ """
-        # Feed forward to obtain the output of the network
-        P = self.predict_matrix(X)
-        # Calc the accuracy
-        accuracy = np.sum( np.argmax(P, axis=1) == np.argmax(Y, axis=1) )
-        return float(accuracy) / Y.shape[0]
-
-    def evaluate(self, X, Y):
+    def accuracy(self, X, Y, P=None):
         """ """
         m = X.shape[0]
         Y = np.array(Y)
-        # Feed forward to obtain the output of the network
-        P = self.predict_matrix(X)
-        # print P.shape, Y.shape
-        cost = float( np.sum(self.cost.F(Y,P) + self.regularize(), axis=0) )
-        # print P.T
 
-        # Apply the regularization
-        return  cost / m 
+        if P is None:
+            # Feed forward to obtain the output of the network
+            P = self.predict_matrix(X)
 
-    def regularize(self, type='L2'):
+        # Calculate the accuracy
+        accuracy = float(np.sum( np.argmax(P, axis=1) == np.argmax(Y, axis=1) ))
+        return accuracy / m
+
+    def calculate_cost(self, X, Y, P=None):
         """ """
-        # def d_L1(x): return (x > 0) * 2 - 1.0  # sign(x) = x / abs(x)
-        # def d_L2(x): return (x)
+        m = X.shape[0]
+        Y = np.array(Y)
 
-        # # regularization_penalty = rp
-        # rp = 0.0 if d_regularization_norm is None else d_regularization_norm(self.W[i])
-        # if d_regularization_norm is not None:
-        #     rp[:, 0] = 0  # do not penalize bias
+        if P is None:
+            # Feed forward to obtain the output of the network
+            P = self.predict_matrix(X)
 
-        reg = 0.
-        weights = copy.deepcopy(self.weights)
+        # Calculate cost and apply regularization
+        cost = (float( np.sum(self.cost.F(Y,P)) )) / m # + self.reg_rate * self.regularize()) / m
+        return  cost
+
+    def regularize(self, get_penalty=False):
+        """ """
+        r, rp = 0., []
         # Goes through the list of matrices
-        for i in xrange(1, len(weights)):
+        for i in xrange(1, len(self.weights)):
+
+            W = copy.deepcopy(self.weights[i])
             # delete bias
-            weights[i] = np.delete(weights[i], 0, axis=1) # 0=slice
+            W = np.delete(W, 0, axis=1) # 0=slice
+            # regularization
+            r += float(np.sum( self.regular.F(W) ))
 
-            size = ( 1, np.prod(weights[i].shape) )
-            if type == 'L1':
-                reg += float(np.sum(  np.abs(weights[i].reshape(size)   )) )
-            else:
-                # square the values, because they can be negative
-                reg += float(np.sum(np.power(weights[i].reshape(size), 2)) / 2.)
-                # Calc the sum at first by rows, than by columns
-        return self.reg_rate * reg
+            if get_penalty: # regularization penalty
+                rp.append( self.reg_rate * self.regular.D(W) )
 
-    def backprop(self, X, Y):
+        return (rp if get_penalty else r )
+
+    def backprop(self, X, Y, P=None):
         """ X, Y - matrices of doubles
 
             Calculates the list of matrices 'delta_weights':
                          dim(delta_weights) == dim(weights)
         """
-        Y = np.array(Y)
-        P = self.predict_matrix(X)
+        if  P is None:
+            P = self.predict_matrix(X)
         
         n = self.n_layers
         m = X.shape[0]
+        Y = np.array(Y)
         # -----------------------------------------------------------------
-        nabla_weights = [0] * (self.n_layers)
-        delta_weights = [0] * (self.n_layers)
-
-        prev_delta_weights = [np.zeros_like(W) for W in self.weights ]
-        # for i in xrange(m):
-
+        nabla_weights      = [0] * (self.n_layers)
+        # prev_delta_weights = [ np.zeros_like(W) for W in self.weights ]
+        
         output_layer = True
         # Goes through the all layers
         for l in xrange(n-1, 0, -1):
                 
             Z = np.array(self.Z[l])
-            if output_layer:
-                # output layer
-                    
-                # print l
-                # print "( Z=", Z.shape, '- P=', P.shape, ') * Y=', Y.shape
-                # print 'N=', self.neurons[-1].D(Z).shape, "Z=", Z.shape
-
-                # P= A[l]
+            if output_layer: # output layer
                 deltas = self.cost.D(Y,P) * self.neurons[-1].D(Z)
+                # print deltas.shape
                 output_layer = False
-            else:
-                # any hidden layer
-                    
-                # print l+1
-                # print self.weights[l+1].shape
-                # print self.weights[l].shape
-                # print "W=", self.weights[l+1][:,1:].T.shape, "D=", deltas.T.shape
-                # print 'N=', self.neurons[l+1].D(Z).shape, "Z=", Z.shape
+            else: # any hidden layer
+                deltas = np.dot(self.weights[l + 1].T[1:,:], deltas.T)   # -bias
+                deltas = deltas.T * self.neurons[l + 1].D(Z)
 
-                deltas = np.dot(self.weights[l+1].T[1:,:], deltas.T)
-                deltas = deltas.T * self.neurons[l].D(Z)
-                # deltas = deltas[1:] # -bias
-
-            A = self.A[l-1] # layer input data
-            # A = np.c_[np.ones(A.shape[0]), A] # already biases
-
-            # print"A=", A.T.shape, "D=", deltas.shape # self.A[l][:,1:].shape, 
-
-            # delta_weights[l] += deltas * self.A[l][:,1:]
-            nabla_weights[l] = np.dot(A.T, deltas).T / m
-
-        # with open('out3.txt', 'w') as f:
-        #     print >>f, nabla_weights, '\n\n\n'
+            A = self.A[l-1].T # already biases
+            nabla_weights[l] = np.dot(A, deltas).T / m
         # -----------------------------------------------------------------
-        # for i in range(1, len(delta_weights)):
-        #     delta_weights[i] /= m
-        #     delta_weights[i][:,1:] += self.weights[i][:,1:] * (self.regularize() / m)  # regularization
-
         # update weights
-        for i in xrange(1, self.n_layers):
-            delta_weights[i] =  self.learning_rate * \
-                               (self.momentum_rate * prev_delta_weights[i] + # momentum: add last delta
-                                nabla_weights[i])                            # value of gradient
-                                # self.reg_rate * self.regularized_weights())  # regularization
+        for i in xrange(1, n):
+            # rp = self.regularize(True)   # regularization rate applied
+            # print nabla_weights[i].shape, rp[i].shape
+
+            delta_weights = (self.learning_rate * \
+                            # (self.momentum_rate * prev_delta_weights[i] +   # momentum: add last delta
+                             nabla_weights[i])                              # value of gradient
+                             # + np.c_[ np.ones(rp[i].shape[0]), rp[i] ])   # regularization penalty
 
             # print "W=", self.weights[i].shape, "D=", delta_weights[i].shape
-
-            self.weights[i] -= delta_weights[i]
-            prev_delta_weights[i] = delta_weights[i]
+            self.weights[i] -= delta_weights
+            # prev_delta_weights[i] = delta_weights
         # -----------------------------------------------------------------
-     
-    def cross_validation(X_test, Y_test, cv_goal=None):
-        # if bias
-        # cv_input_data = np.c_[np.ones(X_test.shape[0]), X_test]
-        P = self.predict_matrix(X_test, add_bias=False)
 
-        if not cv_goal: cv_goal= self.cost.F
-
-        # regularization_norm = L2
-        reg = 0.0 if regularization_norm is None else np.sum(map( lambda m: regularization_norm(m), self.W) )
-
-        cv_cost = np.sum( cv_goal(P, Y_test) + reg ) / X_test.shape[0]
-        return cv_cost
-     
     def forward_pass(self, X):
         CX, Z, A = X, [], []
     
@@ -241,28 +199,75 @@ class NeuralNetwork(object):
                 CX = np.c_[ np.ones(CX.shape[0]), CX ]
         return A,Z
 
-    def backward_pass(self, X, Y):
-     
-        # compute cost
-        P = self.predict_matrix(X)
+    def backprop1(self, X, Y):
+                 # learning_rate = 0.1,
+                 # momentum_rate = 0.9,
+                 # regularization_rate = 0.0001,
+                 # regularization = Regularization('L2'),
+                 # neural_local_gain = None, # bonus, penalty, min, max
 
-        # # regularization_norm = L2
-        # reg  = 0. if regularization_norm is None else np.sum( map(lambda m: regularization_norm(m), self.W) )
-        # cost = np.sum( goal(P, Y) + reg ) / X.shape[0]
-        #  
-        #  
-        # if n_iter > n_iter_stop_skip:
-        #     if do_cv:
-        #         if (1 - stop_threshold) * cv_cost[-1] > min(cv_cost):
-        #             break
-        #     else:
-        #         if (1 - stop_threshold) * cost[-1] > min(cost):
-        #             break
-        #     if cost[-1] <= min_train_cost:
-        #         break
-        #     if len(cv_cost) > 0 and cv_cost[-1] <= min_cv_cost:
-        #         break
-        #     if len(cost) > 1 and abs(cost[-1] - cost[-2]) < tolerance:
-        #         break
+                 # max_iter = 10000,
+                 # min_cost = np.finfo(float).eps,
+                 # n_iter_stop_skip = 10,
+                 # stop_threshold = 0.05,
+                 # tolerance = np.finfo(float).eps,
+                 # verbose=True):
+        m = X.shape[0]
+        input_data = np.c_[np.ones(m), X]
+        
+        if neural_local_gain is not None:
+            nlg_bonus, nlg_penalty, nlg_min, nlg_max = neural_local_gain
+        
+        last_delta_W = [ np.zeros(np.prod(w.shape)).reshape(w.shape) for w in self.W ]
 
-    
+        # neural local gain: learning rate modifier for each of weights in network
+        nlg = [ np.ones(w.shape) for w in self.W ] if neural_local_gain is not None else None
+        
+        # forward pass
+        f_z, z = self.forward_pass(X)
+        P = f_z[-1]
+
+        # backward pass
+        nabla_W = [None] * len(self.W)
+
+        # W = [ W1, W2 ]
+        # A = [ X,  A1, P ]
+        # Z = [     Z1, Z2]
+
+        out = True
+        for i_layer in reversed(range(len(self.W))):
+            
+            if out: # output layer
+                dE_dz = d_goal(Y, P) * (d_f_list[i_layer](z[i_layer]))
+                print 'z',i_layer
+                out = False
+            else: # any hidden layer
+                dE_dz = self.W[i_layer + 1].T[1:, :].dot(dE_dz_next.T).T * d_f_list[i_layer](z[i_layer])
+                print 'w', i_layer + 1,'z',i_layer
+
+            layer_input_data = None
+            if i_layer == 0: # FYI: batch data already contains zero column with ones
+                layer_input_data = input_data
+                print 'a', 0
+            else:
+                layer_input_data = np.c_[np.ones(f_z[i_layer - 1].shape[0]), f_z[i_layer - 1]]
+                print 'a', i_layer - 1
+
+            nabla_W[i_layer] = np.dot(layer_input_data.T, dE_dz).T / m
+
+        # update weights
+        for i_layer in range(len(self.W)):
+            regularization_penalty = 0.0 if d_regularization_norm is None else d_regularization_norm(self.W[i_layer])
+            if d_regularization_norm is not None:
+                regularization_penalty[:, 0] = 0  # do not penalize bias
+
+            delta_W = (learning_rate if nlg is None else learning_rate * nlg[i_layer]) * (
+                momentum_rate * last_delta_W[i_layer] +  # momentum: add last delta
+                nabla_W[i_layer] +  # value of gradient
+                (0.0 if d_regularization_norm is None else regularization_rate * regularization_penalty)  # regularization
+            )
+            if nlg is not None:
+                c = delta_W * last_delta_W[i_layer] >= 0
+                nlg[i_layer] = neuron_local_gain_update(nlg[i_layer], c, nlg_bonus, nlg_penalty, nlg_min, nlg_max)
+            self.W[i_layer] -= delta_W
+            last_delta_W[i_layer] = delta_W

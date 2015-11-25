@@ -4,16 +4,43 @@ import random
 import sys
 
 
+def identity(x): return x
+
+@np.vectorize
+def log_Bernoulli_likelihood_elements(t, y):
+    return(0 if t == 0 or y == 1 else (t * np.log(y) if y != 0 else t * np.log(np.finfo(float).eps))) + \
+          (0 if t == 1 or y == 0 else ((1 - t) * np.log(1 - y) if y != 1 else (1 - t) * np.log(np.finfo(float).eps)))
+
+
+def log_Bernoulli_likelihood(t, y):
+    """
+    -sum( t * log(y) + (1 - t) * log(1 - y) )
+    :param t: target values
+    :param y: predicted values
+    """
+    return -np.sum(log_Bernoulli_likelihood_elements(t, y), axis=1)
+
+@np.vectorize
+def d_log_Bernoulli_likelihood(t, y):
+    return -(t / y if y != 0 else t / np.finfo(float).eps) + \
+           ((1 - t) / (1 - y) if y != 1 else (1 - t) / np.finfo(float).eps)
+
+class Cost1:
+    def F(self, t,y): return   log_Bernoulli_likelihood(t,y)
+    def D(self, t,y): return d_log_Bernoulli_likelihood(t,y)
+
 class Cost(object):
     """ """
     def __init__(self, type='Bernoulli'):
         if type == 'Bernoulli':
-            # np.vectorize()
             self.F = Cost.Bernoulli_function
             self.D = Cost.Bernoulli_derivative
         elif type == 'square':
             self.F = Cost.square_function
             self.D = Cost.square_derivative
+        elif type == 'hamming':
+            self.F = Cost.hamming_function
+            self.D = Cost.hamming_derivative
         else:
             raise ValueError
 
@@ -28,13 +55,10 @@ class Cost(object):
         # h0 = np.fabs(h - 0.) < eps
         # h1 = np.fabs(h - 1.) < eps
         # ---------------------------
-        if y == 0 or h == 1:
-            res = 0.    
+        if y == 0 or h == 1: res = 0.    
         else: res =        y  * np.log(       h  if h != 0 else eps )
         # ---------------------------
-        if y == 1 or not h == 0:
-            res += 0.
-    
+        if y == 1 or not h == 0: res += 0.    
         else: res += (1. - y) * np.log( (1. - h) if h != 1 else eps )
         # ---------------------------
         return res
@@ -44,12 +68,9 @@ class Cost(object):
         """ -sum( y * np.log(h) - (1. - y) * np.log(1. - h) ) """
         return  - np.sum( Cost.likelihood(y, h), axis=1 )
 
-    # @staticmethod
-    # def Bernoulli_derivative(y, h):
-    #     return (y / h) - (1. - y) / (1. - h)
-
     @np.vectorize
     def Bernoulli_derivative(y, h):
+        """ (y / h) - (1. - y) / (1. - h) """
         eps = np.finfo(float).eps
 
         res = -(      y  /  h       if h != 0 else      y  / eps)
@@ -64,13 +85,21 @@ class Cost(object):
     def square_derivative(y, h):
         return y - h;
 
+    @staticmethod
+    def hamming_function(y, h):
+        return np.sum(np.abs(y - h), axis=1)
+
+    @staticmethod
+    def hamming_derivative(y, h):
+        return np.sign(y - h)
+
 
 class Activation(object):
     """ """
     def __init__(self, type='sigmoid'):
         """ """
         if   type == 'identity':
-            self.F = np.identity
+            self.F = identity
             self.D = np.ones_like
         elif type == 'sigmoid':
             self.F = Activation.sigmoid_function
@@ -147,17 +176,17 @@ class Activation(object):
 
 class Regularization(object):
     """ """
-    def __init__(self, type='sigmoid'):
+    def __init__(self, type='L2'):
         """ """
         if   type == 'L0':
-            self.F = np.identity
+            self.F = identity
             self.D = np.ones_like
         elif type == 'L1':
             self.F = Regularization.L1_F
             self.D = Regularization.L1_D
         elif type == 'L2':
             self.F = Regularization.L2_F
-            self.D = Regularization.L2_D
+            self.D = identity
         else:
             raise Exception('Supported functions: L0, L1, L2')
 
@@ -166,17 +195,11 @@ class Regularization(object):
         return [ 'L0', 'L1', 'L2' ]
     
     @staticmethod
-    def L1_F(x):
-        return (m > 0) * 2 - 1.0  # sign(m) = m / abs(m)
+    def L1_F(x):  return (x > 0) * 2 - 1.0  # sign(x) = x / abs(x)
 
     @staticmethod
-    def L1_D(x):
-        return np.sum( np.abs( x.reshape((1, np.prod(m.shape)))))
+    def L1_D(x):  return  np.sum(np.abs( x.reshape( (1, np.prod(x.shape)) ) ))
 
     @staticmethod
-    def L2_F(x):
-        return 0.5 * np.sum(m.reshape((1, np.prod(m.shape))) ** 2)
-
-    @staticmethod
-    def L2_D(x): return x
+    def L2_F(x):  return  np.sum(np.power( x.reshape( (1, np.prod(x.shape)) ), 2)) * 0.5
 

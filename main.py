@@ -1,8 +1,8 @@
 ﻿from collections import defaultdict
+from math import *
 
-import matplotlib.image as mpimg
-import matplotlib.pyplot as pl
-import matplotlib as plt
+from test import test_ann
+# from rbm_test import test_rbm
 
 import numpy as np
 import random
@@ -10,9 +10,9 @@ import sys
 import re
 import os
 
-from  nn_test import test_ann
-from rbm_test import test_rbm
-
+import matplotlib.image as mpimg
+import matplotlib.pyplot as pl
+import matplotlib as plt
 
 def input_data(data_folder, n_classes=26, test_samples=[6,7,8], valid_samples=[5,6]):
     """ """
