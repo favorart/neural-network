@@ -6,33 +6,12 @@ import sys
 
 def identity(x): return x
 
-@np.vectorize
-def log_Bernoulli_likelihood_elements(t, y):
-    return(0 if t == 0 or y == 1 else (t * np.log(y) if y != 0 else t * np.log(np.finfo(float).eps))) + \
-          (0 if t == 1 or y == 0 else ((1 - t) * np.log(1 - y) if y != 1 else (1 - t) * np.log(np.finfo(float).eps)))
-
-
-def log_Bernoulli_likelihood(t, y):
-    """
-    -sum( t * log(y) + (1 - t) * log(1 - y) )
-    :param t: target values
-    :param y: predicted values
-    """
-    return -np.sum(log_Bernoulli_likelihood_elements(t, y), axis=1)
-
-@np.vectorize
-def d_log_Bernoulli_likelihood(t, y):
-    return -(t / y if y != 0 else t / np.finfo(float).eps) + \
-           ((1 - t) / (1 - y) if y != 1 else (1 - t) / np.finfo(float).eps)
-
-class Cost1:
-    def F(self, t,y): return   log_Bernoulli_likelihood(t,y)
-    def D(self, t,y): return d_log_Bernoulli_likelihood(t,y)
 
 class Cost(object):
     """ """
     def __init__(self, type='Bernoulli'):
-        if type == 'Bernoulli':
+        self.type = type
+        if   type == 'Bernoulli':
             self.F = Cost.Bernoulli_function
             self.D = Cost.Bernoulli_derivative
         elif type == 'square':
@@ -45,36 +24,38 @@ class Cost(object):
             raise ValueError
 
     @staticmethod
+    def support_functions():
+        return [ 'Bernoulli', 'square', 'hamming' ]
+
+    @staticmethod
     @np.vectorize
     def likelihood(y, h):
-        eps = np.finfo(float).eps
-        res = 0.
-        # ---------------------------
-        # y0 = np.fabs(y - 0.) < eps
-        # y1 = np.fabs(y - 1.) < eps
-        # h0 = np.fabs(h - 0.) < eps
-        # h1 = np.fabs(h - 1.) < eps
-        # ---------------------------
-        if y == 0 or h == 1: res = 0.    
-        else: res =        y  * np.log(       h  if h != 0 else eps )
-        # ---------------------------
-        if y == 1 or not h == 0: res += 0.    
-        else: res += (1. - y) * np.log( (1. - h) if h != 1 else eps )
-        # ---------------------------
-        return res
-
+      res, eps = 0., np.finfo(float).eps
+      # ---------------------------
+      y0, y1 = np.fabs(y - 0.) < eps, np.fabs(y - 1.) < eps
+      h0, h1 = np.fabs(h - 0.) < eps, np.fabs(h - 1.) < eps
+      # ---------------------------
+      res  = eps if (y0 or h1) else (    y  * np.log(    h  if (not h0) else eps))
+      res += eps if (y1 or h0) else ((1.-y) * np.log((1.-h) if (not h1) else eps))
+      # ---------------------------
+      return res
+    
     @staticmethod
     def Bernoulli_function(y, h):
         """ -sum( y * np.log(h) - (1. - y) * np.log(1. - h) ) """
         return  - np.sum( Cost.likelihood(y, h), axis=1 )
 
+    @staticmethod
     @np.vectorize
     def Bernoulli_derivative(y, h):
         """ (y / h) - (1. - y) / (1. - h) """
+        # ---------------------------
         eps = np.finfo(float).eps
-
-        res = -(      y  /  h       if h != 0 else      y  / eps)
-        res += ((1. - y) / (1. - h) if h != 1 else (1 - y) / eps)
+        h0, h1 = np.fabs(h-0.) < eps, np.fabs(h-1.) < eps
+        # ---------------------------
+        res  = ((1.-y)/(1.-h) if (not h1) else (1.-y)/eps)
+        res -= (    y / h     if (not h0) else     y /eps)
+        # ---------------------------
         return res
 
     @staticmethod
@@ -98,6 +79,7 @@ class Activation(object):
     """ """
     def __init__(self, type='sigmoid'):
         """ """
+        self.type = type
         if   type == 'identity':
             self.F = identity
             self.D = np.ones_like
@@ -178,6 +160,7 @@ class Regularization(object):
     """ """
     def __init__(self, type='L2'):
         """ """
+        self.type = type
         if   type == 'L0':
             self.F = identity
             self.D = np.ones_like
@@ -190,9 +173,8 @@ class Regularization(object):
         else:
             raise Exception('Supported functions: L0, L1, L2')
 
-    def list(self):
-        " Supported functions' names "
-        return [ 'L0', 'L1', 'L2' ]
+    @staticmethod
+    def support_functions(): return [ 'L0', 'L1', 'L2' ]
     
     @staticmethod
     def L1_F(x):  return (x > 0) * 2 - 1.0  # sign(x) = x / abs(x)

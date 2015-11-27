@@ -1,9 +1,5 @@
-﻿from collections import defaultdict
-from math import *
-
-from test import test_ann
-# from rbm_test import test_rbm
-
+﻿# from collections import defaultdict
+# from math import *
 import numpy as np
 import random
 import sys
@@ -11,8 +7,11 @@ import re
 import os
 
 import matplotlib.image as mpimg
-import matplotlib.pyplot as pl
-import matplotlib as plt
+
+from visual import ann_visual, rbm_visual
+from test_ann import test_ann
+from test_rbm import test_rbm
+
 
 def input_data(data_folder, n_classes=26, test_samples=[6,7,8], valid_samples=[5,6]):
     """ """
@@ -68,8 +67,10 @@ def input_data(data_folder, n_classes=26, test_samples=[6,7,8], valid_samples=[5
 
 if __name__ == '__main__':
 
-    X_train, y_train, X_test, y_test = input_data('./data/')
+    # X_train, y_train, X_test, y_test = input_data("./data/", test_samples=[7,8])
+    # test_ann(X_train, y_train, X_test, y_test, [X_train.shape[1], 30, y_train.shape[1]])
+    # visual(X_train, y_train, X_test, y_test)
 
-    test_ann(X_train, y_train, X_test, y_test)
-    # test_rbm(X_train, y_train, X_test, y_test)
+    X_train, y_train, X_test, y_test = input_data("./data/", test_samples=[])
+    rbm_visual(X_train, y_train, X_test, y_test)
 
