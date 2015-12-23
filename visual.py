@@ -1,4 +1,4 @@
-import matplotlib.pyplot as pl
+﻿import matplotlib.pyplot as pl
 import matplotlib as plt
 import numpy as np
 
@@ -6,7 +6,7 @@ from test_ann import test_ann
 from test_rbm import test_rbm
 
 
-def ann_visual(X_train, y_train, X_test, y_test):
+def ann_visual_weights(X_train, y_train, X_test, y_test):
 
     xes, ycv, y_c = range(1,6), [], []
     for m in xes:
@@ -20,22 +20,24 @@ def ann_visual(X_train, y_train, X_test, y_test):
     pl.plot(xes, y_c, 'r-')
     pl.plot(xes, ycv, 'b-')
     pl.show()
-
     return
 
 
-def rbm_visual(X_train, y_train, X_test, y_test):
+def rbm_visual_weights(X_train, y_train, X_test, y_test):
 
-    rbm = test_rbm(X_train, y_train, X_test, y_test)
+    rbm = test_rbm(X_train, y_train, X_test, y_test, \
+                   max_iter=5000, verbose=True)
        
     pl.figure(figsize=(50,50))
+
     W = rbm.W.T
     print W.shape
 
     for i,w in enumerate(W):
-        w = (np.array(w) - np.mean(w)) / np.var(w) / len(w)
+        w = (np.array(w) - np.mean(w)) / (len(w) * np.var(w))
         pl.subplot(10, 10, i+1)
         pl.imshow( w.reshape( (29,29) ) )
-        if not (i%50): print '.'
+        if not (i%50): print '.',
 
     pl.show()
+    return

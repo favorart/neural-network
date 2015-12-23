@@ -18,6 +18,7 @@ class BoltzmannMachine(object):
                  momentum_rate=0.9,
                  regularization_rate=0.1,
                  regularization=None,      # norm to penalize model, if set then it will be included in cost
+                 neural_local_gain=None,   # (bonus, penalty, min, max), type of adaptive learning rate
                  
                  rnd=np.random.RandomState(1234),
                  margin=0.0001):
@@ -39,6 +40,13 @@ class BoltzmannMachine(object):
         self.cost=cost
         self.mode=mode
         self.regul=regularization
+        self.nlg=neural_local_gain
+        
+        if  self.nlg: # local gain
+            # learning rate modifier for each of weights
+            self.nlg_W = np.ones_like(self.W)
+            self.nlg_v = np.ones_like(self.vbias)
+            self.nlg_h = np.ones_like(self.hbias)
 
     def sample(self, X):
         """ Sample 0 or 1 with respect to given
@@ -140,122 +148,44 @@ class BoltzmannMachine(object):
 
         # update weights
         rp = self.regularize(penalty=True)
-        delta_W = self.lr * (
-                  self.mr * prev_delta_W +
-                  nabla_W - rp)
+        delta_W = (self.lr * self.nlg_W if self.nlg else self.lr ) * \
+                  (self.mr * prev_delta_W + nabla_W + rp)
         self.W += delta_W
         prev_delta_W = delta_W
 
-        delta_v = self.lr * (
-                  self.mr * prev_delta_vbias +
-                  nabla_v )
+        delta_v = (self.lr * self.nlg_v if self.nlg else self.lr ) * \
+                  ( self.mr * prev_delta_vbias + nabla_v )
         self.vbias += delta_v
         prev_delta_vbias = delta_v
 
-        delta_h = self.lr * (
-                  self.mr * prev_delta_hbias +
-                  nabla_h )
+        delta_h = (self.lr * self.nlg_h if self.nlg else self.lr ) * \
+                  (self.mr * prev_delta_hbias + nabla_h )
         self.hbias += delta_h
         prev_delta_hbias = delta_h
 
+        if  self.nlg:
+            bonus, penalty, rmin, rmax = self.nlg
+            # Update local rate for W
+            condition = ((delta_W * prev_delta_W) >= 0)
+            self.nlg_W = self.update_local_gain(self.nlg_W, condition, bonus, penalty, rmin, rmax)
 
+            # Update local rate for v
+            condition = ((delta_v * prev_delta_vbias) >= 0)
+            self.nlg_v = self.update_local_gain(self.nlg_v, condition, bonus, penalty, rmin, rmax)
 
-class BoltzmannMachine1(object):        
-    def contrastive_divergence(self, X, k=1, lr=0.1):
-        """ Contrastive Divergence (CD)-k """
-        
-        ph_mean, ph_sample = self.h_to_v(self.input)
-        nh_samples = ph_sample
-        for step in xrange(k):
-            nv_means, nv_samples, \
-            nh_means, nh_samples = self.gibbs_hvh(nh_samples)
-        
-        self.W += lr * (np.dot(self.input.T, ph_mean) - np.dot(nv_samples.T, nh_means))
-        self.vbias += lr * np.mean(self.input - nv_samples, axis=0)
-        self.hbias += lr * np.mean(ph_mean - nh_means, axis=0)
+            # Update local rate for h
+            condition = ((delta_h * prev_delta_hbias) >= 0)
+            self.nlg_h = self.update_local_gain(self.nlg_h, condition, bonus, penalty, rmin, rmax)
 
-    def h_to_v(self, v0_sample):
-        """ """
-        pre_sigmoid_h1, h1_mean = self.prop_up(v0_sample)
-        h1_sample = self.rng.binomial(size=h1_mean.shape, n=1, p=h1_mean)
-        return [h1_mean, h1_sample]
-        
-    def v_to_h(self, h0_sample):
-        """ Compute the activation of the visible given the hidden sample """
-        pre_sigmoid_v1, v1_mean = self.propdown(h0_sample)
-        # get a sample of the visible given their activation
-        # Note that theano_rng.binomial returns a symbolic sample of dtype
-        # int64 by default. If we want to keep our computations in floatX
-        # for the GPU we need to specify to return the dtype floatX
-        
-        # v1_mean = self.prop_down(h0_sample)
-        # discrete: binomial
-        v1_sample = self.rng.binomial( size=v1_mean.shape, n=1, p=v1_mean)
-        return [v1_mean, v1_sample]
-
-    def prop_up(self, v):
-        """ This function propagates the visible units activation
-            upwards to the hidden units.
-
-            Note: returns also the pre-sigmoid activation of the layer.
-            As it will turn out later, due to how Theano deals with
-            optimizations, this symbolic variable will be needed to write
-            down a more stable computational graph (see details in the
-            reconstruction cost function)
+    @staticmethod
+    @np.vectorize
+    def update_local_gain(local_gain, condition, bonus, penalty, rmin, rmax):
+        """ Update neurons local gain due to condition matrix
+                local_gain: by neurons
+                 condition: matrix
+            Returns the new values of local gain
         """
-        pre_sigmoid_activation = np.dot(v, self.W) + self.hbias
-        return  [pre_sigmoid_activation, sigmoid(pre_sigmoid_activation)]
-
-    def prop_down(self, h):
-
-        pre_sigmoid_activation = np.dot(h, self.W.T) + self.vbias
-        return [pre_sigmoid_activation, sigmoid(pre_sigmoid_activation)]
-
-    # gibbs_vhv  performs a step of Gibbs sampling starting from the visible units. (useful for sampling from the RBM)
-    # gibbs_hvh  performs a step of Gibbs sampling starting from the hidden units.  (useful for performing CD and PCD updates)
-    # 
-    def gibbs_hvh(self, h0_sample):
-        ''' This function implements one step of Gibbs sampling,
-            starting from the hidden state'''
-        pre_sigmoid_v1, v1_mean, v1_sample = self.v_to_h(h0_sample)
-        pre_sigmoid_h1, h1_mean, h1_sample = self.h_to_v(v1_sample)
-        return [pre_sigmoid_v1, v1_mean, v1_sample,
-                pre_sigmoid_h1, h1_mean, h1_sample]
-
-    def gibbs_vhv(self, v0_sample):
-        ''' This function implements one step of Gibbs sampling,
-            starting from the visible state'''
-        pre_sigmoid_h1, h1_mean, h1_sample = self.h_to_v(v0_sample)
-        pre_sigmoid_v1, v1_mean, v1_sample = self.v_to_h(h1_sample)
-        return [pre_sigmoid_h1, h1_mean, h1_sample,
-                pre_sigmoid_v1, v1_mean, v1_sample]
-
-    def get_reconstruction_cross_entropy(self):
-        """ """
-        pre_sigmoid_activation_h = np.dot(self.input, self.W) + self.hbias
-        sigmoid_activation_h = sigmoid(pre_sigmoid_activation_h)
-        pre_sigmoid_activation_v = np.dot(sigmoid_activation_h, self.W.T) + self.vbias
-        sigmoid_activation_v = sigmoid(pre_sigmoid_activation_v)
-        cross_entropy = - np.mean(
-        np.sum(self.input * np.log(sigmoid_activation_v) +
-        (1 - self.input) * np.log(1 - sigmoid_activation_v), axis=1))
-        return cross_entropy
-
-    def reconstruct(self, v):
-        """ """
-        h = sigmoid(np.dot(v, self.W) + self.hbias)
-        reconstructed_v = sigmoid(np.dot(h, self.W.T) + self.vbias)
-        return reconstructed_v
-
-
-def nlg():
-    """
-    neural_local_gain: tuple (bonus, penalty, min, max), type of adaptive learning rate;
-    https://www.cs.toronto.edu/~hinton/csc321/notes/lec9.pdf
-    do_visible_sampling: do sampling of visible units in contrastive divergence,
-    http://www.cs.toronto.edu/~hinton/absps/guideTR.pdf 3.2 Updating the visible states (page 6)
-    """
-    return
-
+        return   min(bonus + local_gain, rmax) if condition \
+            else max(penalty * local_gain, rmin)
 
     

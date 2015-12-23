@@ -4,7 +4,6 @@ import copy
 import sys
 import re
 
-
 from funcs import Cost, Activation, Regularization
 
 
@@ -183,24 +182,4 @@ class NeuralNetwork(object):
             prev_delta_weights[i] = delta_weights
 
 
-# @np.vectorize
-# def neuron_local_gain_update(r, c, bonus, penalty, rmin, rmax):
-#     '''
-#     update neurons local gain due to condition matrix
-#     :param r: neurons local gain
-#     :param c: condition matrix
-#     :return: new values of neurons local gain
-#     '''
-#     return min(bonus + r, rmax) if c else max(penalty * r, rmin)
-# 
-# def nlg(self, X, Y):
-#     # neural_local_gain = None, # bonus, penalty, min, max
-#     if neural_local_gain is not None:
-#         nlg_bonus, nlg_penalty, nlg_min, nlg_max = neural_local_gain        
-#     # neural local gain: learning rate modifier for each of weights in network
-#     nlg = [ np.ones(w.shape) for w in self.W ] if neural_local_gain is not None else None        
-#     delta_W = (learning_rate if nlg is None else learning_rate * nlg[i_layer]) # * ( ... )
-#     if nlg is not None:
-#         c = delta_W * last_delta_W[i_layer] >= 0
-#         nlg[i_layer] = neuron_local_gain_update(nlg[i_layer], c, nlg_bonus, nlg_penalty, nlg_min, nlg_max)
 
